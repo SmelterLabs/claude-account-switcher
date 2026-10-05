@@ -1,0 +1,6 @@
+{
+  "name": "account-switcher",
+  "version": "1.0.0",
+  "description": "Bill a Claude Code session to a different Claude subscription per project (a .claude/account marker) or on demand (/account <name>), through a local token-swapping relay. The desktop app keeps its own login.",
+  "author": { "name": "Casey Russell" }
+}

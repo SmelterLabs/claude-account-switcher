@@ -1,0 +1,8 @@
+*.raw.txt
+*.err.txt
+tokens.json
+relay.log
+relay.alive
+relay.pid
+__pycache__/
+.claude/settings.local.json
