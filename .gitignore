@@ -1,8 +1,14 @@
+# Token store and relay runtime files (never commit these)
+tokens.json
 *.raw.txt
 *.err.txt
-tokens.json
 relay.log
+relay.launchd.log
 relay.alive
 relay.pid
+*.bak-account-switcher-*
+
+# Local tooling
 __pycache__/
 .claude/settings.local.json
+.DS_Store

@@ -12,7 +12,18 @@ const RELAY = "http://127.0.0.1:48620";
 const STALE_S = 30;
 const WARN_DAYS = 14;
 
-type Heartbeat = { port: number; pid: number; at: number; accounts: string[]; expires?: Record<string, string> };
+type Usage = { at: number; h5: number | null; h5_reset: number | null; d7: number | null; d7_reset: number | null };
+type Heartbeat = { port: number; pid: number; at: number; accounts: string[]; expires?: Record<string, string>; usage?: Record<string, Usage> };
+
+// The routed account's own usage, as the API reported it on that account's last reply through the relay.
+// The desktop app's usage readout is the window's login, not this.
+function usageLine(name: string, u?: Usage): string | null {
+  if (!u) return null;
+  const pct = (v: number | null) => (v === null ? "?" : `${Math.round(v * 100)}%`);
+  const when = (s: number | null) => (s ? new Date(s * 1000).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" }) : "?");
+  const age = Math.max(0, Math.round((Date.now() / 1000 - u.at) / 60));
+  return `  ${name} usage: 5-hour ${pct(u.h5)} (resets ${when(u.h5_reset)}) · weekly ${pct(u.d7)} (resets ${when(u.d7_reset)}) · seen ${age} min ago`;
+}
 
 let store = "";
 let account: string | null = null;      // the account this session should bill, or null
@@ -72,7 +83,7 @@ async function apply($: any): Promise<string> {
   let s = `💳 billing: ${label}`;
   if (left !== null && left <= WARN_DAYS) {
     s += ` ⚠ token expires in ${left}d`;
-    if (!warned) { warned = true; $.ui.toast(`account-switcher: the ${label} token expires in ${left} days — run add-account.ps1 -Name ${account}`); }
+    if (!warned) { warned = true; $.ui.toast(`account-switcher: the ${label} token expires in ${left} days — run the add-account script for ${account} again`); }
   }
   $.ui.status(s);
   return s;
@@ -106,6 +117,8 @@ export function register(on: any) {
         hb ? `Relay: up (pid ${hb.pid}, port ${hb.port}); accounts with tokens: ${known.join(", ") || "none"}` : "Relay: DOWN — sessions fall back to the window's account",
       ];
       for (const n of known) { const d = daysLeft(hb?.expires?.[n]); if (d !== null) lines.push(`  ${n}: token expires in ${d} days`); }
+      for (const n of known) { const u = usageLine(n, hb?.usage?.[n]); if (u) lines.push(u); }
+      if (hb && !Object.keys(hb.usage ?? {}).length) lines.push("  usage: none seen yet (appears after an account's first reply through the relay)");
       lines.push("Usage: /account <name> · /account off · marker file .claude/account in a project");
       return { text: lines.join("\n") };
     }
@@ -114,7 +127,7 @@ export function register(on: any) {
       return { text: await apply($) };
     }
     if (!known.includes(arg)) {
-      return { text: hb ? `No token for '${arg}'. Known: ${known.join(", ") || "none"}. Add one with add-account.ps1 -Name ${arg}` : "Relay is down; start it (scheduled task ClaudeAccountRelay) and try again." };
+      return { text: hb ? `No token for '${arg}'. Known: ${known.join(", ") || "none"}. Add one with scripts/add-account.ps1 -Name ${arg} (Windows) or scripts/add-account.sh ${arg} (macOS/Linux)` : "Relay is down; start it (Windows: scheduled task ClaudeAccountRelay · Linux: systemctl --user start claude-account-relay · macOS: launchctl kickstart gui/$(id -u)/com.claude-account-switcher.relay) and try again." };
     }
     account = arg; source = "command";
     return { text: `${await apply($)} — from the next message on` };

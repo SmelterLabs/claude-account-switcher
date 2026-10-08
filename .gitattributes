@@ -1,0 +1,5 @@
+# Shell scripts and the relay must stay LF so they run unchanged on macOS/Linux when cloned on Windows.
+* text=auto
+*.sh text eol=lf
+*.py text eol=lf
+*.ps1 text eol=crlf

@@ -60,6 +60,27 @@ def load_expiry() -> dict:
     return {n: e["expiresAt"] for n, e in read_store().items() if isinstance(e, dict) and e.get("expiresAt")}
 
 
+USAGE: dict = {}  # {name: {"at", "h5", "h5_reset", "d7", "d7_reset"}} from the last reply that carried the headers
+_RL = "anthropic-ratelimit-unified-"
+
+
+def note_usage(name: str, resp) -> None:
+    """Remember the account's own usage windows as the API reports them on a reply (never a token)."""
+    try:
+        d7, h5 = resp.getheader(_RL + "7d-utilization"), resp.getheader(_RL + "5h-utilization")
+        if d7 is None and h5 is None:
+            return
+        USAGE[name] = {
+            "at": time.time(),
+            "h5": float(h5) if h5 is not None else None,
+            "h5_reset": int(resp.getheader(_RL + "5h-reset") or 0) or None,
+            "d7": float(d7) if d7 is not None else None,
+            "d7_reset": int(resp.getheader(_RL + "7d-reset") or 0) or None,
+        }
+    except (TypeError, ValueError):
+        pass
+
+
 class Relay(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -104,6 +125,7 @@ class Relay(BaseHTTPRequestHandler):
             log(f"{name} {self.command} {rest} upstream error {type(e).__name__}")
             self._json(502, {"type": "error", "error": {"type": "api_error", "message": f"account-switcher relay: upstream error {type(e).__name__}"}})
             return
+        note_usage(name, resp)
         self.send_response(resp.status, resp.reason)
         for k, v in resp.getheaders():
             if k.lower() in ("transfer-encoding", "content-length", "connection"):
@@ -137,7 +159,7 @@ def heartbeat(port: int) -> None:
         while True:
             try:
                 with open(ALIVE, "w", encoding="utf-8") as f:
-                    f.write(json.dumps({"port": port, "pid": os.getpid(), "at": time.time(), "accounts": sorted(load_tokens().keys()), "expires": load_expiry()}))
+                    f.write(json.dumps({"port": port, "pid": os.getpid(), "at": time.time(), "accounts": sorted(load_tokens().keys()), "expires": load_expiry(), "usage": dict(USAGE)}))
             except OSError:
                 pass
             time.sleep(10)
