@@ -55,4 +55,4 @@ $ok = $false
 for ($i = 0; $i -lt 10; $i++) { Start-Sleep 1; if (Test-Path "$Store\relay.alive") { $hb = Get-Content "$Store\relay.alive" -Raw | ConvertFrom-Json; if (([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - $hb.at) -lt 30) { $ok = $true; break } } }
 if (-not $ok) { throw "relay did not start (no fresh heartbeat in $Store\relay.alive)" }
 Write-Host "Relay running: pid $($hb.pid), port $($hb.port), accounts: $($hb.accounts -join ', ')"
-Write-Host "Done. Add accounts with scripts\add-account.ps1 -Name <name>; open a new Claude Code session to load the plugin."
+Write-Host "Done. Add accounts with scripts\add-account.ps1 -Name <name>; open a new Claude Code session, or type /reload-plugins in an open one, to load the plugin."

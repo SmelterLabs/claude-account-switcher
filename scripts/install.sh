@@ -170,4 +170,4 @@ if [ -z "$HB" ]; then
   exit 1
 fi
 echo "Relay running: $HB"
-echo "Done. Add accounts with scripts/add-account.sh <name>; open a new Claude Code session to load the plugin."
+echo "Done. Add accounts with scripts/add-account.sh <name>; open a new Claude Code session, or type /reload-plugins in an open one, to load the plugin."
