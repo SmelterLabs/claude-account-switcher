@@ -12,3 +12,6 @@ relay.pid
 __pycache__/
 .claude/settings.local.json
 .DS_Store
+
+# Engine-written type declarations (laid beside the plugin on load)
+plugin/.claude-plugin/types/

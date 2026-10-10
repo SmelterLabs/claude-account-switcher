@@ -8,7 +8,9 @@ Works on Windows and macOS with the Claude Desktop app and with terminal Claude 
 
 **Pin a project to an account.** Put a file named `account` inside the project's `.claude` folder containing just the account's name, for example `work`. Every session you open in that project then bills that account. The status line under the prompt shows `💳 billing: WORK`.
 
-**Switch one session on the fly.** Type `/account work` in the session; from your next message on, that session bills the `work` account. `/account off` puts it back on the app's own account. `/account` on its own tells you what the session is doing, whether the relay is up, which accounts have tokens, when each token expires, and each account's real usage (5-hour and weekly, with reset times).
+**Switch one session with a click.** Above the prompt box there is a slim row: 💳 the account this session bills, then one button per account you have added. Click one and that session bills it from your next message on; the row and the status line both change. `off` puts it back on the app's own account. `hide` removes the row in every session (your choice is remembered); `/account show` brings it back.
+
+**Or by keyboard.** Type `/account work` in the session; from your next message on, that session bills the `work` account. `/account off` puts it back on the app's own account. `/account` on its own tells you what the session is doing, whether the relay is up, which accounts have tokens, when each token expires, and each account's real usage (5-hour and weekly, with reset times).
 
 **Where to read usage.** Use `/account`. The app's own usage panel, and a session asked "what's my usage", report the account the app is signed into, not the account a switched session is billing.
 

@@ -3,7 +3,8 @@
 Bill a Claude Code session to a different Claude subscription, per project or on demand, inside **one** Claude Desktop app or one terminal. No logout, no restart, no second copy of the app.
 
 - A project folder with `.claude/account` containing `work` bills every session opened there to the account named `work`.
-- `/account <name>` switches the current session from its next message; `/account off` returns it to the app's own login; `/account` shows status, token expiry and each account's real usage meters.
+- A band above the prompt shows the account in force with one button per account that has a token: one click switches the current session from its next message; `off` returns it to the app's own login; `hide` puts the band away (remembered; `/account show` brings it back).
+- `/account <name>` does the same by keyboard; `/account off` returns to the app's own login; `/account` shows status, token expiry and each account's real usage meters.
 - The status line reads `💳 billing: WORK` whenever a session is routed. If the relay is down or has no token for the name, the session stays on the app's login and the status line says so.
 
 | Platform | Installer | Service | Status |
@@ -58,7 +59,7 @@ Open a new Claude Code session afterwards; existing sessions do not load the plu
 ## Use
 
 - Put `.claude/account` with the account name in any project that should bill another account.
-- In a session: `/account`, `/account work`, `/account off`.
+- In a session: click an account in the band above the prompt, or `/account`, `/account work`, `/account off`, `/account hide`, `/account show`.
 - Renew a token near expiry (the status line warns at 14 days): run add-account for that name again.
 - Remove: `scripts\uninstall.ps1` / `scripts/uninstall.sh` (`-PurgeTokens` / `--purge-tokens` to delete the token store too).
 
