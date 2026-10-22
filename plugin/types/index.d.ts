@@ -3,8 +3,8 @@
 export type Billing = {
   /** The account this session bills, or null for the window's own login. */
   account: string | null;
-  /** How the account was chosen. */
-  source: "marker" | "command" | "button" | null;
+  /** How the account was chosen; "auto" follows the account with the most usage left, "off" keeps the window's login. */
+  source: "marker" | "auto" | "command" | "button" | "off" | null;
   /** Accounts the relay holds a token for; empty while the relay is down. */
   accounts: string[];
   /** Whether the relay answered a fresh heartbeat. */
@@ -15,6 +15,11 @@ export type Billing = {
 
 declare module "claude-code" {
   interface PluginState {
-    "account-switcher": { billing: Billing; isHidden: boolean };
+    "account-switcher": {
+      billing: Billing;
+      isHidden: boolean;
+      /** Each account's fullness 0..1 from the relay's latest usage reading; null when unknown. */
+      fullness: Record<string, number | null>;
+    };
   }
 }

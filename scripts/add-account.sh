@@ -3,24 +3,30 @@
 # Runs `claude setup-token` in a pseudo-terminal: a browser tab opens (or a sign-in URL is shown);
 # sign in as the account you are adding and approve. If Claude Code asks you to paste a code back,
 # paste it here as usual. The token is captured straight into tokens.json; on screen it is masked.
-# Usage: scripts/add-account.sh <name> [--store DIR] [--claude PATH] [--wait SECONDS]
+# --isolated opens the sign-in in a fresh, empty Chrome window instead of your usual browser, so it
+# never mixes with the accounts you are signed into there; the window and its profile are removed after.
+# Usage: scripts/add-account.sh <name> [--store DIR] [--claude PATH] [--wait SECONDS] [--isolated [--browser PATH]]
 set -euo pipefail
 
 NAME=""
 STORE="$HOME/.claude/account-switcher"
 CLAUDE_EXE="claude"
 WAIT=300
+ISOLATED=0
+BROWSER_EXE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --store) STORE="$2"; shift 2 ;;
     --claude) CLAUDE_EXE="$2"; shift 2 ;;
     --wait) WAIT="$2"; shift 2 ;;
-    -h|--help) sed -n '2,6p' "$0"; exit 0 ;;
+    --isolated) ISOLATED=1; shift ;;
+    --browser) BROWSER_EXE="$2"; shift 2 ;;
+    -h|--help) sed -n '2,8p' "$0"; exit 0 ;;
     -*) echo "unknown option: $1" >&2; exit 2 ;;
     *) NAME="$1"; shift ;;
   esac
 done
-[ -n "$NAME" ] || { echo "usage: $0 <name> [--store DIR] [--claude PATH] [--wait SECONDS]" >&2; exit 2; }
+[ -n "$NAME" ] || { echo "usage: $0 <name> [--store DIR] [--claude PATH] [--wait SECONDS] [--isolated [--browser PATH]]" >&2; exit 2; }
 if ! printf '%s' "$NAME" | grep -Eq '^[a-z0-9][a-z0-9_-]{0,30}$'; then
   echo "Name must be lowercase letters, digits, - or _ (got '$NAME')" >&2; exit 2
 fi
@@ -41,7 +47,28 @@ CFG="$(mktemp -d "${TMPDIR:-/tmp}/claude-account-switcher-setup-$NAME.XXXXXX")"
 trap 'rm -rf "$CFG"' EXIT
 unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_BASE_URL ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN
 
-echo "Sign in as the '$NAME' account in the browser tab that opens (or at the URL shown), then approve."
+# Isolated sign-in: Claude Code opens the link through $BROWSER, here a small script that starts
+# Chrome on a throwaway profile inside the scratch config dir. Closed and removed on exit.
+if [ "$ISOLATED" = 1 ]; then
+  if [ -z "$BROWSER_EXE" ]; then
+    for c in "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+             "$(command -v google-chrome || true)" "$(command -v google-chrome-stable || true)" \
+             "$(command -v chromium || true)" "$(command -v chromium-browser || true)"; do
+      if [ -n "$c" ] && [ -x "$c" ]; then BROWSER_EXE="$c"; break; fi
+    done
+  fi
+  [ -n "$BROWSER_EXE" ] && [ -x "$BROWSER_EXE" ] || { echo "--isolated needs Chrome or Chromium; pass its path with --browser" >&2; exit 1; }
+  PROFILE_DIR="$CFG/browser-profile"
+  OPENER="$CFG/open-isolated"
+  printf '#!/bin/sh\n"%s" --user-data-dir="%s" --no-first-run --no-default-browser-check --new-window "$1" >/dev/null 2>&1 &\n' \
+    "$BROWSER_EXE" "$PROFILE_DIR" > "$OPENER"
+  chmod 700 "$OPENER"
+  export BROWSER="$OPENER"
+  trap 'pkill -f -- "--user-data-dir=$PROFILE_DIR" 2>/dev/null || true; sleep 1; rm -rf "$CFG"' EXIT
+fi
+
+if [ "$ISOLATED" = 1 ]; then WHERE="the new browser window"; else WHERE="the browser tab that opens (or at the URL shown)"; fi
+echo "Sign in as the '$NAME' account in $WHERE, then approve."
 echo "If Claude Code asks for a code, paste it here. Waiting up to $WAIT s..."
 
 # The Python below runs setup-token on a pty (it prints nothing without one), passes your keystrokes

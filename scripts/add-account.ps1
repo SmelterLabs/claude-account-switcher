@@ -1,11 +1,16 @@
 # Adds (or replaces) an account's long-lived token in tokens.json.
 # Runs `claude setup-token`: a browser tab opens; sign in as the account you are adding and approve.
 # The token is captured straight into tokens.json and never printed.
+# -IsolatedBrowser opens the sign-in in a fresh, empty Chrome (or Edge) window instead of your usual
+# browser, so it never mixes with the accounts you are signed into there; the window and its
+# temporary profile are removed when the script ends.
 param(
   [Parameter(Mandatory)][string]$Name,
   [string]$Store = (Join-Path $HOME '.claude\account-switcher'),
   [string]$ClaudeExe = 'claude',
-  [int]$WaitSeconds = 300
+  [int]$WaitSeconds = 300,
+  [switch]$IsolatedBrowser,
+  [string]$BrowserExe
 )
 $ErrorActionPreference = 'Stop'
 if ($Name -notmatch '^[a-z0-9][a-z0-9_-]{0,30}$') { throw "Name must be lowercase letters, digits, - or _ (got '$Name')" }
@@ -25,24 +30,63 @@ New-Item -ItemType Directory -Force $cfg | Out-Null
 $env:CLAUDE_CONFIG_DIR = $cfg
 Remove-Item Env:\CLAUDE_CODE_OAUTH_TOKEN, Env:\ANTHROPIC_BASE_URL, Env:\ANTHROPIC_API_KEY, Env:\ANTHROPIC_AUTH_TOKEN -ErrorAction SilentlyContinue
 
-$p = Start-Process -FilePath $exe -ArgumentList 'setup-token' -RedirectStandardOutput $raw -RedirectStandardError $err -PassThru -WindowStyle Hidden
-Write-Host "Sign in as the '$Name' account in the browser tab that just opened, then approve. Waiting up to $WaitSeconds s..."
-$deadline = (Get-Date).AddSeconds($WaitSeconds)
-$token = $null
-while ((Get-Date) -lt $deadline) {
-  if (Test-Path $raw) {
-    $text = [string](Get-Content $raw -Raw -ErrorAction SilentlyContinue)
-    if ($text) {
-      $m = [regex]::Match($text, 'sk-ant-oat01-[A-Za-z0-9_\-]+')
-      if ($m.Success) { $token = $m.Value; break }
-    }
+# Isolated sign-in: Claude Code is handed a browser command that does nothing, and the sign-in link it
+# prints is opened here in a throwaway profile inside the scratch config dir. (A .cmd cannot open the
+# link itself: cmd.exe cuts the link at its first '&'.)
+$profileDir = Join-Path $cfg 'browser-profile'
+if ($IsolatedBrowser) {
+  if (-not $BrowserExe) {
+    $BrowserExe = @(
+      "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
+      "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
+      "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe",
+      "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe",
+      "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe"
+    ) | Where-Object { Test-Path $_ } | Select-Object -First 1
   }
-  if ($p.HasExited -and -not (Test-Path $raw)) { break }
-  Start-Sleep -Seconds 3
+  if (-not $BrowserExe -or -not (Test-Path $BrowserExe)) { throw "-IsolatedBrowser needs Chrome or Edge; pass its path with -BrowserExe" }
+  $noBrowser = Join-Path $cfg 'no-browser.cmd'
+  Set-Content -Path $noBrowser -Value '@exit /b 0' -Encoding ascii
+  $env:BROWSER = $noBrowser
 }
-if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue }
-Remove-Item $raw, $err -Force -ErrorAction SilentlyContinue
-Remove-Item $cfg -Recurse -Force -ErrorAction SilentlyContinue
+
+$token = $null
+try {
+  $p = Start-Process -FilePath $exe -ArgumentList 'setup-token' -RedirectStandardOutput $raw -RedirectStandardError $err -PassThru -WindowStyle Hidden
+  $where = if ($IsolatedBrowser) { 'the new browser window' } else { 'the browser tab that just opened' }
+  Write-Host "Sign in as the '$Name' account in $where, then approve. Waiting up to $WaitSeconds s..."
+  $deadline = (Get-Date).AddSeconds($WaitSeconds)
+  $opened = $false
+  while ((Get-Date) -lt $deadline) {
+    if (Test-Path $raw) {
+      $text = [string](Get-Content $raw -Raw -ErrorAction SilentlyContinue)
+      if ($text) {
+        $m = [regex]::Match($text, 'sk-ant-oat01-[A-Za-z0-9_\-]+')
+        if ($m.Success) { $token = $m.Value; break }
+        if ($IsolatedBrowser -and -not $opened) {
+          $u = [regex]::Match($text, 'https://[^\s\x07\x1b]*/oauth/authorize\?[^\s\x07\x1b]+')
+          if ($u.Success) {
+            Start-Process -FilePath $BrowserExe -ArgumentList "--user-data-dir=`"$profileDir`"", '--no-first-run', '--no-default-browser-check', '--new-window', "`"$($u.Value)`""
+            $opened = $true
+          }
+        }
+      }
+    }
+    if ($p.HasExited -and -not (Test-Path $raw)) { break }
+    Start-Sleep -Seconds $(if ($IsolatedBrowser -and -not $opened) { 1 } else { 3 })
+  }
+  if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue }
+} finally {
+  if ($IsolatedBrowser) {
+    # Close the throwaway window (found by its profile folder, so a browser that relaunched itself is caught too).
+    Get-CimInstance Win32_Process -Filter "Name='chrome.exe' OR Name='msedge.exe'" |
+      Where-Object { $_.CommandLine -and $_.CommandLine.Contains($profileDir) } |
+      ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    Start-Sleep -Seconds 2
+  }
+  Remove-Item $raw, $err -Force -ErrorAction SilentlyContinue
+  Remove-Item $cfg -Recurse -Force -ErrorAction SilentlyContinue
+}
 if (-not $token) { throw "No token captured for '$Name' (sign-in not completed?)" }
 
 $tokensPath = Join-Path $Store 'tokens.json'

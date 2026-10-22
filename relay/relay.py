@@ -60,15 +60,25 @@ def load_expiry() -> dict:
     return {n: e["expiresAt"] for n, e in read_store().items() if isinstance(e, dict) and e.get("expiresAt")}
 
 
-USAGE: dict = {}  # {name: {"at", "h5", "h5_reset", "d7", "d7_reset"}} from the last reply that carried the headers
+USAGE: dict = {}  # {name: {"at", "h5", "h5_reset", "d7", "d7_reset", "status", "reset"}} from the last reply that carried the headers
 _RL = "anthropic-ratelimit-unified-"
+
+# Usage probe: an account with no reply through the relay for PROBE_EVERY seconds gets one
+# 1-token message so its usage windows stay fresh for the plugin's automatic pick.
+PROBE_EVERY = 120
+PROBE_BODY = json.dumps({
+    "model": "claude-haiku-5-5", "max_tokens": 1,
+    "system": "You are Claude Code, Anthropic's official CLI for Claude.",
+    "messages": [{"role": "user", "content": "hi"}],
+}).encode()
 
 
 def note_usage(name: str, resp) -> None:
     """Remember the account's own usage windows as the API reports them on a reply (never a token)."""
     try:
         d7, h5 = resp.getheader(_RL + "7d-utilization"), resp.getheader(_RL + "5h-utilization")
-        if d7 is None and h5 is None:
+        status = resp.getheader(_RL + "status")
+        if d7 is None and h5 is None and status is None:
             return
         USAGE[name] = {
             "at": time.time(),
@@ -76,9 +86,38 @@ def note_usage(name: str, resp) -> None:
             "h5_reset": int(resp.getheader(_RL + "5h-reset") or 0) or None,
             "d7": float(d7) if d7 is not None else None,
             "d7_reset": int(resp.getheader(_RL + "7d-reset") or 0) or None,
+            "status": status,  # allowed, allowed_warning or rejected
+            "reset": int(resp.getheader(_RL + "reset") or 0) or None,
         }
     except (TypeError, ValueError):
         pass
+
+
+def probe_usage() -> None:
+    """Keep every account's usage fresh: probe the ones with no reply seen in PROBE_EVERY seconds."""
+
+    def loop():
+        while True:
+            for name, token in load_tokens().items():
+                seen = USAGE.get(name, {}).get("at", 0)
+                if time.time() - seen < PROBE_EVERY:
+                    continue
+                try:
+                    up = http.client.HTTPSConnection(UPSTREAM, timeout=60)
+                    up.request("POST", "/v1/messages", body=PROBE_BODY, headers={
+                        "Authorization": f"Bearer {token}", "Content-Type": "application/json",
+                        "anthropic-version": "2023-06-01", "anthropic-beta": "oauth-2025-04-20",
+                    })
+                    resp = up.getresponse()
+                    resp.read()
+                    note_usage(name, resp)
+                    up.close()
+                    log(f"{name} usage probe -> {resp.status}")
+                except Exception as e:
+                    log(f"{name} usage probe error {type(e).__name__}")
+            time.sleep(20)
+
+    threading.Thread(target=loop, daemon=True).start()
 
 
 class Relay(BaseHTTPRequestHandler):
@@ -172,7 +211,9 @@ if __name__ == "__main__":
     log(f"relay starting on 127.0.0.1:{port}")
     heartbeat(port)
     try:
-        ThreadingHTTPServer(("127.0.0.1", port), Relay).serve_forever()
+        server = ThreadingHTTPServer(("127.0.0.1", port), Relay)
     except OSError as e:  # port already held by a running relay: exit quietly
         log(f"relay exit: {e}")
         sys.exit(0)
+    probe_usage()  # only the relay that holds the port probes
+    server.serve_forever()
