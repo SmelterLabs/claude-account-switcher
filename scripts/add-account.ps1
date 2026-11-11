@@ -43,8 +43,14 @@ while ((Get-Date) -lt $deadline) {
   if ($p.HasExited -and -not (Test-Path $raw)) { break }
   Start-Sleep -Seconds 3
 }
-if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue }
-Remove-Item $raw, $err -Force -ErrorAction SilentlyContinue
+# Kill the whole tree: behind claude.cmd the real process is a child that keeps the output file open.
+& taskkill.exe /PID $p.Id /T /F 2>&1 | Out-Null
+foreach ($try in 1..10) {
+  Remove-Item $raw, $err -Force -ErrorAction SilentlyContinue
+  if (-not (Test-Path $raw) -and -not (Test-Path $err)) { break }
+  Start-Sleep -Seconds 1
+}
+if (Test-Path $raw) { Write-Warning "Could not delete $raw (it holds a copy of the token). Delete it by hand." }
 Remove-Item $cfg -Recurse -Force -ErrorAction SilentlyContinue
 if (-not $token) { throw "No token captured for '$Name' (sign-in not completed?)" }
 
