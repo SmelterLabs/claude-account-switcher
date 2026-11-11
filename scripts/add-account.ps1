@@ -15,7 +15,10 @@ $err = Join-Path $Store "setup-token-$Name.err.txt"
 Remove-Item $raw, $err -ErrorAction SilentlyContinue
 
 # Resolve the claude executable (PATH or an explicit path).
-$exe = (Get-Command $ClaudeExe -ErrorAction SilentlyContinue).Source
+# An npm install puts claude.ps1, claude.cmd and an extensionless sh shim on the PATH; only .exe/.cmd/.bat
+# can be started by Start-Process with redirected output, so pick one of those.
+$apps = @(Get-Command $ClaudeExe -All -CommandType Application -ErrorAction SilentlyContinue | ForEach-Object Source)
+$exe = @('.exe', '.cmd', '.bat') | ForEach-Object { $ext = $_; $apps | Where-Object { [IO.Path]::GetExtension($_) -eq $ext } } | Select-Object -First 1
 if (-not $exe) { $exe = $ClaudeExe }
 if (-not (Test-Path $exe)) { throw "claude executable not found: $ClaudeExe" }
 
